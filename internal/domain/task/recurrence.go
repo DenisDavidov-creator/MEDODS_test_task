@@ -5,7 +5,7 @@ import "time"
 type RecurrenceType string
 
 const (
-	TypeDaily         RecurrenceType = "daily"
+	TypeInterval      RecurrenceType = "interval"
 	TypeDayOfMonth    RecurrenceType = "day_of_month"
 	TypeEvenOdd       RecurrenceType = "even_odd"
 	TypeSpecificDates RecurrenceType = "specific_dates"
@@ -36,7 +36,7 @@ type RecurrenceDates struct {
 
 func (s RecurrenceType) Valid() bool {
 	switch s {
-	case TypeDaily, TypeDayOfMonth, TypeEvenOdd, TypeSpecificDates:
+	case TypeInterval, TypeDayOfMonth, TypeEvenOdd, TypeSpecificDates:
 		return true
 	default:
 		return false
