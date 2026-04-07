@@ -10,6 +10,15 @@ type taskMutationDTO struct {
 	Title       string            `json:"title"`
 	Description string            `json:"description"`
 	Status      taskdomain.Status `json:"status"`
+	Recurrence  *recurrenceDTO    `json:"recurrence"`
+}
+
+type recurrenceDTO struct {
+	Type          taskdomain.RecurrenceType `json:"type"`
+	Interval      *int64                    `json:"interval"`
+	DayOfMonth    *int64                    `json:"day_of_month"`
+	EvenOdd       *taskdomain.EvenOddType   `json:"even_odd"`
+	SpecificDates []time.Time               `json:"specific_dates"`
 }
 
 type taskDTO struct {
@@ -19,10 +28,11 @@ type taskDTO struct {
 	Status      taskdomain.Status `json:"status"`
 	CreatedAt   time.Time         `json:"created_at"`
 	UpdatedAt   time.Time         `json:"updated_at"`
+	Recurrence  *recurrenceDTO    `json:"recurrence"`
 }
 
 func newTaskDTO(task *taskdomain.Task) taskDTO {
-	return taskDTO{
+	dto := taskDTO{
 		ID:          task.ID,
 		Title:       task.Title,
 		Description: task.Description,
@@ -30,4 +40,15 @@ func newTaskDTO(task *taskdomain.Task) taskDTO {
 		CreatedAt:   task.CreatedAt,
 		UpdatedAt:   task.UpdatedAt,
 	}
+	if task.Recurrence != nil {
+		dto.Recurrence = &recurrenceDTO{
+			Type:          task.Recurrence.Type,
+			Interval:      task.Recurrence.Interval,
+			DayOfMonth:    task.Recurrence.DayOfMonth,
+			EvenOdd:       task.Recurrence.EvenOdd,
+			SpecificDates: task.Recurrence.Dates,
+		}
+	}
+
+	return dto
 }

@@ -26,6 +26,7 @@ type Recurrence struct {
 	DayOfMonth *int64         `json:"day_of_month"`
 	EvenOdd    *EvenOddType   `json:"even_odd"`
 	NextRunAt  *time.Time     `json:"next_run_at"`
+	Dates      []time.Time    `json:"dates"`
 }
 
 type RecurrenceDates struct {
