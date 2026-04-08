@@ -16,9 +16,9 @@ type Repository interface {
 }
 
 type RecurrenceRepository interface {
-	Create(ctx context.Context, taskID int64, input RecurrenceInput) (*taskdomain.Recurrence, error)
-	GetByTaskID(ctx context.Context, id int64) (*taskdomain.Recurrence, error)
-	Update(ctx context.Context, taskID int64, input RecurrenceInput) (*taskdomain.Recurrence, error)
+	Create(ctx context.Context, recurrence *taskdomain.Recurrence) (*taskdomain.Recurrence, error)
+	GetByTaskID(ctx context.Context, taskID int64) (*taskdomain.Recurrence, error)
+	Update(ctx context.Context, recurrence *taskdomain.Recurrence) (*taskdomain.Recurrence, error)
 	Delete(ctx context.Context, id int64) error
 	ListDue(ctx context.Context, now time.Time) ([]taskdomain.Recurrence, error)
 }

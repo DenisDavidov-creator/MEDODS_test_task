@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,14 +11,16 @@ import (
 )
 
 type Service struct {
-	repo Repository
-	now  func() time.Time
+	repo           Repository
+	recurrenceRepo RecurrenceRepository
+	now            func() time.Time
 }
 
-func NewService(repo Repository) *Service {
+func NewService(repo Repository, recurrenceRepo RecurrenceRepository) *Service {
 	return &Service{
-		repo: repo,
-		now:  func() time.Time { return time.Now().UTC() },
+		repo:           repo,
+		recurrenceRepo: recurrenceRepo,
+		now:            func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -27,18 +30,45 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*taskdomain.Ta
 		return nil, err
 	}
 
-	model := &taskdomain.Task{
+	modelTask := &taskdomain.Task{
 		Title:       normalized.Title,
 		Description: normalized.Description,
 		Status:      normalized.Status,
 	}
 	now := s.now()
-	model.CreatedAt = now
-	model.UpdatedAt = now
+	modelTask.CreatedAt = now
+	modelTask.UpdatedAt = now
 
-	created, err := s.repo.Create(ctx, model)
+	var modelRecurrence *taskdomain.Recurrence
+	if input.Recurrence != nil {
+		modelRecurrence = &taskdomain.Recurrence{
+			Type:       input.Recurrence.Type,
+			Interval:   input.Recurrence.Interval,
+			DayOfMonth: input.Recurrence.DayOfMonth,
+			EvenOdd:    input.Recurrence.EvenOdd,
+			Dates:      input.Recurrence.Dates,
+		}
+
+		nextRunAt, err := calculateNextRunAt(modelRecurrence, s.now())
+		if err != nil {
+			return nil, err
+		}
+		modelRecurrence.NextRunAt = nextRunAt
+	}
+
+	//TODO transaction?
+	created, err := s.repo.Create(ctx, modelTask)
 	if err != nil {
 		return nil, err
+	}
+
+	if modelRecurrence != nil {
+		modelRecurrence.TaskID = created.ID
+		createdRecurrence, err := s.recurrenceRepo.Create(ctx, modelRecurrence)
+		if err != nil {
+			return nil, err
+		}
+		created.Recurrence = createdRecurrence
 	}
 
 	return created, nil
@@ -62,6 +92,23 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateInput) (*tas
 		return nil, err
 	}
 
+	var modelRecurrence *taskdomain.Recurrence
+	if input.Recurrence != nil {
+		modelRecurrence = &taskdomain.Recurrence{
+			Type:       input.Recurrence.Type,
+			Interval:   input.Recurrence.Interval,
+			DayOfMonth: input.Recurrence.DayOfMonth,
+			EvenOdd:    input.Recurrence.EvenOdd,
+			Dates:      input.Recurrence.Dates,
+		}
+
+		nextRunAt, err := calculateNextRunAt(modelRecurrence, s.now())
+		if err != nil {
+			return nil, err
+		}
+		modelRecurrence.NextRunAt = nextRunAt
+	}
+
 	model := &taskdomain.Task{
 		ID:          id,
 		Title:       normalized.Title,
@@ -71,6 +118,25 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateInput) (*tas
 	}
 
 	updated, err := s.repo.Update(ctx, model)
+	if err != nil {
+		return nil, err
+	}
+
+	existing, err := s.recurrenceRepo.GetByTaskID(ctx, id)
+	if err != nil && !errors.Is(err, taskdomain.ErrNotFound) {
+		return nil, err
+	}
+
+	switch {
+	case existing != nil && modelRecurrence != nil:
+		modelRecurrence.TaskID = id
+		updated.Recurrence, err = s.recurrenceRepo.Update(ctx, modelRecurrence)
+	case existing != nil && modelRecurrence == nil:
+		err = s.recurrenceRepo.Delete(ctx, existing.ID)
+	case existing == nil && modelRecurrence != nil:
+		modelRecurrence.TaskID = id
+		updated.Recurrence, err = s.recurrenceRepo.Create(ctx, modelRecurrence)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -122,4 +188,47 @@ func validateUpdateInput(input UpdateInput) (UpdateInput, error) {
 	}
 
 	return input, nil
+}
+
+func calculateNextRunAt(recurrence *taskdomain.Recurrence, from time.Time) (*time.Time, error) {
+	switch recurrence.Type {
+	case taskdomain.TypeInterval:
+		next := from.AddDate(0, 0, int(*recurrence.Interval))
+		return &next, nil
+	case taskdomain.TypeDayOfMonth:
+		day := int(*recurrence.DayOfMonth)
+		year, month, _ := from.Date()
+		if int64(from.Day()) < *recurrence.DayOfMonth {
+			lastDay := time.Date(year, month+1, 0, 0, 0, 0, 0, from.Location()).Day()
+			if day > lastDay {
+				day = lastDay
+			}
+			next := time.Date(year, month, day, 0, 0, 0, 0, from.Location())
+			return &next, nil
+		}
+		next := time.Date(year, month+1, day, 0, 0, 0, 0, from.Location())
+		return &next, nil
+	case taskdomain.TypeEvenOdd:
+		_, _, day := from.Date()
+		isEven := day%2 == 0
+		wantsEven := *recurrence.EvenOdd == taskdomain.TypeEven
+		if isEven == wantsEven {
+			next := from.AddDate(0, 0, 2)
+			return &next, nil
+		}
+		next := from.AddDate(0, 0, 1)
+		return &next, nil
+	case taskdomain.TypeSpecificDates:
+		var minDate time.Time
+		for _, date := range recurrence.Dates {
+			if date.After(from) && (minDate.IsZero() || date.Before(minDate)) {
+				minDate = date
+			}
+		}
+		if minDate.IsZero() {
+			return nil, fmt.Errorf("no upcoming specific dates")
+		}
+		return &minDate, nil
+	}
+	return nil, fmt.Errorf("unexpected recurrence type")
 }
