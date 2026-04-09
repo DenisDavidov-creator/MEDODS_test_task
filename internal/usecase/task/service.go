@@ -84,7 +84,7 @@ func (s *Service) GetByID(ctx context.Context, id int64) (*taskdomain.Task, erro
 	}
 
 	recurrence, err := s.recurrenceRepo.GetByTaskID(ctx, task.ID)
-	if err != nil {
+	if err != nil && !errors.Is(err, taskdomain.ErrNotFound) {
 		return nil, err
 	}
 	task.Recurrence = recurrence
@@ -205,6 +205,10 @@ func validateCreateInput(input CreateInput) (CreateInput, error) {
 	if !input.Status.Valid() {
 		return CreateInput{}, fmt.Errorf("%w: invalid status", ErrInvalidInput)
 	}
+	err := validateRecurrenceInput(input.Recurrence)
+	if err != nil {
+		return CreateInput{}, fmt.Errorf("%w", err)
+	}
 
 	return input, nil
 }
@@ -220,8 +224,52 @@ func validateUpdateInput(input UpdateInput) (UpdateInput, error) {
 	if !input.Status.Valid() {
 		return UpdateInput{}, fmt.Errorf("%w: invalid status", ErrInvalidInput)
 	}
+	err := validateRecurrenceInput(input.Recurrence)
+	if err != nil {
+		return UpdateInput{}, fmt.Errorf("%w", err)
+	}
 
 	return input, nil
+}
+
+func validateRecurrenceInput(input *RecurrenceInput) error {
+	if input == nil {
+		return nil
+	}
+	if !input.Type.Valid() {
+		return fmt.Errorf("%w: invalid recurrence type", ErrInvalidInput)
+	}
+
+	switch input.Type {
+	case taskdomain.TypeInterval:
+		if input.Interval == nil || *input.Interval <= 0 {
+			return fmt.Errorf("%w: interval must be positive", ErrInvalidInput)
+		}
+	case taskdomain.TypeDayOfMonth:
+		if input.DayOfMonth == nil || *input.DayOfMonth < 1 || *input.DayOfMonth > 31 {
+			return fmt.Errorf("%w: day of month must be between 1 and 31", ErrInvalidInput)
+		}
+	case taskdomain.TypeEvenOdd:
+		if input.EvenOdd == nil || !input.EvenOdd.Valid() {
+			return fmt.Errorf("%w: even_odd must be 'even' or 'odd'", ErrInvalidInput)
+		}
+	case taskdomain.TypeSpecificDates:
+		if input.Dates == nil {
+			return fmt.Errorf("%w: specific_dates must not be empty", ErrInvalidInput)
+		}
+		now := time.Now()
+		hasFuture := false
+		for _, date := range input.Dates {
+			if date.After(now) {
+				hasFuture = true
+				break
+			}
+		}
+		if !hasFuture {
+			return fmt.Errorf("%w: specific_dates must have at least one future day", ErrInvalidInput)
+		}
+	}
+	return nil
 }
 
 func (s *Service) ProcessDue(ctx context.Context) error {
