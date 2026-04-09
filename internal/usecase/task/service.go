@@ -56,7 +56,6 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*taskdomain.Ta
 		modelRecurrence.NextRunAt = nextRunAt
 	}
 
-	//TODO transaction?
 	created, err := s.repo.Create(ctx, modelTask)
 	if err != nil {
 		return nil, err
@@ -314,15 +313,16 @@ func calculateNextRunAt(recurrence *taskdomain.Recurrence, from time.Time) (*tim
 	case taskdomain.TypeDayOfMonth:
 		day := int(*recurrence.DayOfMonth)
 		year, month, _ := from.Date()
-		if int64(from.Day()) < *recurrence.DayOfMonth {
-			lastDay := time.Date(year, month+1, 0, 0, 0, 0, 0, from.Location()).Day()
-			if day > lastDay {
-				day = lastDay
-			}
-			next := time.Date(year, month, day, 0, 0, 0, 0, from.Location())
-			return &next, nil
+		targetMonth := month
+		if int64(from.Day()) >= *recurrence.DayOfMonth {
+			targetMonth++
 		}
-		next := time.Date(year, month+1, day, 0, 0, 0, 0, from.Location())
+		lastDayInMonth := time.Date(year, targetMonth+1, 0, 0, 0, 0, 0, from.Location()).Day()
+		actualDay := day
+		if actualDay > lastDayInMonth {
+			actualDay = lastDayInMonth
+		}
+		next := time.Date(year, targetMonth, actualDay, 0, 0, 0, 0, from.Location())
 		return &next, nil
 	case taskdomain.TypeEvenOdd:
 		_, _, day := from.Date()
