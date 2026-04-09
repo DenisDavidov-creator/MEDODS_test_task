@@ -139,6 +139,7 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateInput) (*tas
 	switch {
 	case existing != nil && modelRecurrence != nil:
 		modelRecurrence.TaskID = id
+		modelRecurrence.ID = existing.ID
 		updated.Recurrence, err = s.recurrenceRepo.Update(ctx, modelRecurrence)
 	case existing != nil && modelRecurrence == nil:
 		err = s.recurrenceRepo.Delete(ctx, existing.ID)

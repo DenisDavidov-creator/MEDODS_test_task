@@ -169,7 +169,8 @@
             "type": "string",
             "enum": ["new", "in_progress", "done"],
             "example": "new"
-          }
+          },
+          "recurrence": { "$ref": "#/components/schemas/Recurrence", "nullable": true }
         }
       },
       "UpdateTaskRequest": {
@@ -188,7 +189,8 @@
             "type": "string",
             "enum": ["new", "in_progress", "done"],
             "example": "in_progress"
-          }
+          }, 
+          "recurrence": { "$ref": "#/components/schemas/Recurrence", "nullable": true }
         }
       },
       "Task": {
@@ -214,7 +216,24 @@
             "type": "string",
             "format": "date-time",
             "example": "2026-03-24T00:00:00Z"
+          },
+          "recurrence": { 
+            "$ref": "#/components/schemas/Recurrence", 
+            "nullable": true 
           }
+        }
+      },
+      "Recurrence": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["interval", "day_of_month", "even_odd", "specific_dates"]
+          },
+          "interval": { "type": "integer", "nullable": true },
+          "day_of_month": { "type": "integer", "nullable": true },
+          "even_odd": { "type": "string", "enum": ["even", "odd"], "nullable": true },
+          "specific_dates": { "type": "array", "items": { "type": "string", "format": "date-time" }, "nullable": true }
         }
       },
       "Error": {
