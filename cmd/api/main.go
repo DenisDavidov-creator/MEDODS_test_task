@@ -59,6 +59,21 @@ func main() {
 		}
 	}()
 
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := taskUsecase.ProcessDue(ctx); err != nil {
+					logger.Error("process due recurrences", "error", err)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	logger.Info("http server started", "addr", cfg.HTTPAddr)
 
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {

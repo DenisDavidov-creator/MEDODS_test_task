@@ -31,6 +31,7 @@ func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Title:       req.Title,
 		Description: req.Description,
 		Status:      req.Status,
+		Recurrence:  mapRecurrenceDTO(req.Recurrence),
 	})
 	if err != nil {
 		writeUsecaseError(w, err)
@@ -73,6 +74,7 @@ func (h *TaskHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Title:       req.Title,
 		Description: req.Description,
 		Status:      req.Status,
+		Recurrence:  mapRecurrenceDTO(req.Recurrence),
 	})
 	if err != nil {
 		writeUsecaseError(w, err)
@@ -163,4 +165,17 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.WriteHeader(status)
 
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func mapRecurrenceDTO(dto *recurrenceDTO) *taskusecase.RecurrenceInput {
+	if dto == nil {
+		return nil
+	}
+	return &taskusecase.RecurrenceInput{
+		Type:       dto.Type,
+		Interval:   dto.Interval,
+		DayOfMonth: dto.DayOfMonth,
+		EvenOdd:    dto.EvenOdd,
+		Dates:      dto.SpecificDates,
+	}
 }

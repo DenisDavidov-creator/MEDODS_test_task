@@ -15,10 +15,10 @@ type taskMutationDTO struct {
 
 type recurrenceDTO struct {
 	Type          taskdomain.RecurrenceType `json:"type"`
-	Interval      *int64                    `json:"interval"`
-	DayOfMonth    *int64                    `json:"day_of_month"`
-	EvenOdd       *taskdomain.EvenOddType   `json:"even_odd"`
-	SpecificDates []time.Time               `json:"specific_dates"`
+	Interval      *int64                    `json:"interval,omitempty"`
+	DayOfMonth    *int64                    `json:"day_of_month,omitempty"`
+	EvenOdd       *taskdomain.EvenOddType   `json:"even_odd,omitempty"`
+	SpecificDates []time.Time               `json:"specific_dates,omitempty"`
 }
 
 type taskDTO struct {

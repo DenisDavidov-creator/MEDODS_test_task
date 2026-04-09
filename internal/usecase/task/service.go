@@ -78,8 +78,17 @@ func (s *Service) GetByID(ctx context.Context, id int64) (*taskdomain.Task, erro
 	if id <= 0 {
 		return nil, fmt.Errorf("%w: id must be positive", ErrInvalidInput)
 	}
+	task, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
 
-	return s.repo.GetByID(ctx, id)
+	recurrence, err := s.recurrenceRepo.GetByTaskID(ctx, task.ID)
+	if err != nil {
+		return nil, err
+	}
+	task.Recurrence = recurrence
+	return task, nil
 }
 
 func (s *Service) Update(ctx context.Context, id int64, input UpdateInput) (*taskdomain.Task, error) {
@@ -153,7 +162,31 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 }
 
 func (s *Service) List(ctx context.Context) ([]taskdomain.Task, error) {
-	return s.repo.List(ctx)
+
+	tasks, err := s.repo.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]int64, 0, len(tasks))
+	for _, task := range tasks {
+		ids = append(ids, task.ID)
+	}
+
+	recurrences, err := s.recurrenceRepo.ListByTaskIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	recurrenceMap := map[int64]*taskdomain.Recurrence{}
+	for i := range recurrences {
+		recurrenceMap[recurrences[i].TaskID] = &recurrences[i]
+	}
+
+	for i := range tasks {
+		tasks[i].Recurrence = recurrenceMap[tasks[i].ID]
+	}
+
+	return tasks, nil
 }
 
 func validateCreateInput(input CreateInput) (CreateInput, error) {
@@ -188,6 +221,40 @@ func validateUpdateInput(input UpdateInput) (UpdateInput, error) {
 	}
 
 	return input, nil
+}
+
+func (s *Service) ProcessDue(ctx context.Context) error {
+	recurrences, err := s.recurrenceRepo.ListDue(ctx, s.now())
+	if err != nil {
+		return fmt.Errorf("Internal error: %w", err)
+	}
+	for _, value := range recurrences {
+		task, err := s.repo.GetByID(ctx, value.TaskID)
+		if err != nil {
+			return fmt.Errorf("task doesn't exist: %w", err)
+		}
+		_, err = s.repo.Create(ctx, task)
+		if err != nil {
+			return fmt.Errorf("task doesn't created: %w", err)
+		}
+		nextTime, err := calculateNextRunAt(&value, s.now())
+		if err != nil {
+			return fmt.Errorf("doesn't recieve nextTime: %w", err)
+		}
+		if nextTime == nil {
+			err := s.recurrenceRepo.Delete(ctx, value.ID)
+			if err != nil {
+				return err
+			}
+			continue
+		}
+		value.NextRunAt = nextTime
+		_, err = s.recurrenceRepo.Update(ctx, &value)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func calculateNextRunAt(recurrence *taskdomain.Recurrence, from time.Time) (*time.Time, error) {
@@ -226,7 +293,7 @@ func calculateNextRunAt(recurrence *taskdomain.Recurrence, from time.Time) (*tim
 			}
 		}
 		if minDate.IsZero() {
-			return nil, fmt.Errorf("no upcoming specific dates")
+			return nil, nil
 		}
 		return &minDate, nil
 	}

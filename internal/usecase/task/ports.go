@@ -21,6 +21,7 @@ type RecurrenceRepository interface {
 	Update(ctx context.Context, recurrence *taskdomain.Recurrence) (*taskdomain.Recurrence, error)
 	Delete(ctx context.Context, id int64) error
 	ListDue(ctx context.Context, now time.Time) ([]taskdomain.Recurrence, error)
+	ListByTaskIDs(ctx context.Context, taskIDs []int64) ([]taskdomain.Recurrence, error)
 }
 
 type Usecase interface {
@@ -29,6 +30,7 @@ type Usecase interface {
 	Update(ctx context.Context, id int64, input UpdateInput) (*taskdomain.Task, error)
 	Delete(ctx context.Context, id int64) error
 	List(ctx context.Context) ([]taskdomain.Task, error)
+	ProcessDue(ctx context.Context) error
 }
 
 type CreateInput struct {
