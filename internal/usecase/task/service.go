@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -13,14 +14,18 @@ import (
 type Service struct {
 	repo           Repository
 	recurrenceRepo RecurrenceRepository
+	trans          TransactorInterface
 	now            func() time.Time
+	logger         *slog.Logger
 }
 
-func NewService(repo Repository, recurrenceRepo RecurrenceRepository) *Service {
+func NewService(repo Repository, recurrenceRepo RecurrenceRepository, trans TransactorInterface, logger *slog.Logger) *Service {
 	return &Service{
 		repo:           repo,
 		recurrenceRepo: recurrenceRepo,
 		now:            func() time.Time { return time.Now().UTC() },
+		trans:          trans,
+		logger:         logger,
 	}
 }
 
@@ -56,20 +61,26 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*taskdomain.Ta
 		modelRecurrence.NextRunAt = nextRunAt
 	}
 
-	created, err := s.repo.Create(ctx, modelTask)
+	var created = &taskdomain.Task{}
+	err = s.trans.WithinTransaction(ctx, func(ctx context.Context) error {
+		created, err = s.repo.Create(ctx, modelTask)
+		if err != nil {
+			return err
+		}
+
+		if modelRecurrence != nil {
+			modelRecurrence.TaskID = created.ID
+			createdRecurrence, err := s.recurrenceRepo.Create(ctx, modelRecurrence)
+			if err != nil {
+				return err
+			}
+			created.Recurrence = createdRecurrence
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	if modelRecurrence != nil {
-		modelRecurrence.TaskID = created.ID
-		createdRecurrence, err := s.recurrenceRepo.Create(ctx, modelRecurrence)
-		if err != nil {
-			return nil, err
-		}
-		created.Recurrence = createdRecurrence
-	}
-
 	return created, nil
 }
 
@@ -124,32 +135,37 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateInput) (*tas
 		Status:      normalized.Status,
 		UpdatedAt:   s.now(),
 	}
+	var updated = &taskdomain.Task{}
+	err = s.trans.WithinTransaction(ctx, func(ctx context.Context) error {
+		updated, err = s.repo.Update(ctx, model)
+		if err != nil {
+			return err
+		}
 
-	updated, err := s.repo.Update(ctx, model)
+		existing, err := s.recurrenceRepo.GetByTaskID(ctx, id)
+		if err != nil && !errors.Is(err, taskdomain.ErrNotFound) {
+			return err
+		}
+
+		switch {
+		case existing != nil && modelRecurrence != nil:
+			modelRecurrence.TaskID = id
+			modelRecurrence.ID = existing.ID
+			updated.Recurrence, err = s.recurrenceRepo.Update(ctx, modelRecurrence)
+		case existing != nil && modelRecurrence == nil:
+			err = s.recurrenceRepo.Delete(ctx, existing.ID)
+		case existing == nil && modelRecurrence != nil:
+			modelRecurrence.TaskID = id
+			updated.Recurrence, err = s.recurrenceRepo.Create(ctx, modelRecurrence)
+		}
+		if err != nil {
+			return err
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	existing, err := s.recurrenceRepo.GetByTaskID(ctx, id)
-	if err != nil && !errors.Is(err, taskdomain.ErrNotFound) {
-		return nil, err
-	}
-
-	switch {
-	case existing != nil && modelRecurrence != nil:
-		modelRecurrence.TaskID = id
-		modelRecurrence.ID = existing.ID
-		updated.Recurrence, err = s.recurrenceRepo.Update(ctx, modelRecurrence)
-	case existing != nil && modelRecurrence == nil:
-		err = s.recurrenceRepo.Delete(ctx, existing.ID)
-	case existing == nil && modelRecurrence != nil:
-		modelRecurrence.TaskID = id
-		updated.Recurrence, err = s.recurrenceRepo.Create(ctx, modelRecurrence)
-	}
-	if err != nil {
-		return nil, err
-	}
-
 	return updated, nil
 }
 
@@ -277,29 +293,33 @@ func (s *Service) ProcessDue(ctx context.Context) error {
 		return fmt.Errorf("Internal error: %w", err)
 	}
 	for _, value := range recurrences {
-		task, err := s.repo.GetByID(ctx, value.TaskID)
-		if err != nil {
-			return fmt.Errorf("task doesn't exist: %w", err)
-		}
-		_, err = s.repo.Create(ctx, task)
-		if err != nil {
-			return fmt.Errorf("task doesn't created: %w", err)
-		}
-		nextTime, err := calculateNextRunAt(&value, s.now())
-		if err != nil {
-			return fmt.Errorf("doesn't recieve nextTime: %w", err)
-		}
-		if nextTime == nil {
-			err := s.recurrenceRepo.Delete(ctx, value.ID)
+		err = s.trans.WithinTransaction(ctx, func(ctx context.Context) error {
+			task, err := s.repo.GetByID(ctx, value.TaskID)
+			if err != nil {
+				return fmt.Errorf("task doesn't exist: %w", err)
+			}
+			_, err = s.repo.Create(ctx, task)
+			if err != nil {
+				return fmt.Errorf("task doesn't created: %w", err)
+			}
+			nextTime, err := calculateNextRunAt(&value, s.now())
+			if err != nil {
+				return fmt.Errorf("doesn't recieve nextTime: %w", err)
+			}
+			if nextTime == nil {
+				return s.recurrenceRepo.Delete(ctx, value.ID)
+			}
+			value.NextRunAt = nextTime
+			_, err = s.recurrenceRepo.Update(ctx, &value)
 			if err != nil {
 				return err
 			}
-			continue
-		}
-		value.NextRunAt = nextTime
-		_, err = s.recurrenceRepo.Update(ctx, &value)
+			return nil
+		})
 		if err != nil {
-			return err
+			s.logger.Error("Doesn't create task",
+				slog.Int64("ID", value.ID),
+				slog.String("error", err.Error()))
 		}
 	}
 	return nil

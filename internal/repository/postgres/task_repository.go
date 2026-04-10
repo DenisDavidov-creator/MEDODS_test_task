@@ -25,7 +25,7 @@ func (r *Repository) Create(ctx context.Context, task *taskdomain.Task) (*taskdo
 		RETURNING id, title, description, status, created_at, updated_at
 	`
 
-	row := r.pool.QueryRow(ctx, query, task.Title, task.Description, task.Status, task.CreatedAt, task.UpdatedAt)
+	row := getQuerier(ctx, r.pool).QueryRow(ctx, query, task.Title, task.Description, task.Status, task.CreatedAt, task.UpdatedAt)
 	created, err := scanTask(row)
 	if err != nil {
 		return nil, err
@@ -41,7 +41,7 @@ func (r *Repository) GetByID(ctx context.Context, id int64) (*taskdomain.Task, e
 		WHERE id = $1
 	`
 
-	row := r.pool.QueryRow(ctx, query, id)
+	row := getQuerier(ctx, r.pool).QueryRow(ctx, query, id)
 	found, err := scanTask(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -65,7 +65,7 @@ func (r *Repository) Update(ctx context.Context, task *taskdomain.Task) (*taskdo
 		RETURNING id, title, description, status, created_at, updated_at
 	`
 
-	row := r.pool.QueryRow(ctx, query, task.Title, task.Description, task.Status, task.UpdatedAt, task.ID)
+	row := getQuerier(ctx, r.pool).QueryRow(ctx, query, task.Title, task.Description, task.Status, task.UpdatedAt, task.ID)
 	updated, err := scanTask(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -81,7 +81,7 @@ func (r *Repository) Update(ctx context.Context, task *taskdomain.Task) (*taskdo
 func (r *Repository) Delete(ctx context.Context, id int64) error {
 	const query = `DELETE FROM tasks WHERE id = $1`
 
-	result, err := r.pool.Exec(ctx, query, id)
+	result, err := getQuerier(ctx, r.pool).Exec(ctx, query, id)
 	if err != nil {
 		return err
 	}
@@ -100,7 +100,7 @@ func (r *Repository) List(ctx context.Context) ([]taskdomain.Task, error) {
 		ORDER BY id DESC
 	`
 
-	rows, err := r.pool.Query(ctx, query)
+	rows, err := getQuerier(ctx, r.pool).Query(ctx, query)
 	if err != nil {
 		return nil, err
 	}

@@ -25,7 +25,7 @@ func (r *RecurrenceRepository) Create(ctx context.Context, recurrence *taskdomai
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, task_id, type, interval, day_of_month, even_odd, next_run_at
 	`
-	row := r.pool.QueryRow(ctx, query, recurrence.TaskID, recurrence.Type, recurrence.Interval, recurrence.DayOfMonth, recurrence.EvenOdd, recurrence.NextRunAt)
+	row := getQuerier(ctx, r.pool).QueryRow(ctx, query, recurrence.TaskID, recurrence.Type, recurrence.Interval, recurrence.DayOfMonth, recurrence.EvenOdd, recurrence.NextRunAt)
 	created, err := scanRecurrence(row)
 	if err != nil {
 		return nil, err
@@ -39,7 +39,7 @@ func (r *RecurrenceRepository) Create(ctx context.Context, recurrence *taskdomai
 		for _, date := range recurrence.Dates {
 			batch.Queue(queryDates, created.ID, date)
 		}
-		batchResult := r.pool.SendBatch(ctx, batch)
+		batchResult := getQuerier(ctx, r.pool).SendBatch(ctx, batch)
 		if err := batchResult.Close(); err != nil {
 			return nil, err
 		}
@@ -55,7 +55,7 @@ func (r *RecurrenceRepository) GetByTaskID(ctx context.Context, taskID int64) (*
 		FROM recurrence
 		WHERE task_id = $1
 	`
-	row := r.pool.QueryRow(ctx, query, taskID)
+	row := getQuerier(ctx, r.pool).QueryRow(ctx, query, taskID)
 	found, err := scanRecurrence(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -69,7 +69,7 @@ func (r *RecurrenceRepository) GetByTaskID(ctx context.Context, taskID int64) (*
 			FROM recurrence_dates
 			WHERE recurrence_id = $1 
 		`
-		rows, err := r.pool.Query(ctx, query, found.ID)
+		rows, err := getQuerier(ctx, r.pool).Query(ctx, query, found.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -100,7 +100,7 @@ func (r *RecurrenceRepository) Update(ctx context.Context, recurrence *taskdomai
 			RETURNING id, task_id, type, interval, day_of_month, even_odd, next_run_at
 		`
 
-	row := r.pool.QueryRow(ctx, query, recurrence.Type, recurrence.Interval, recurrence.DayOfMonth, recurrence.EvenOdd, recurrence.NextRunAt, recurrence.ID)
+	row := getQuerier(ctx, r.pool).QueryRow(ctx, query, recurrence.Type, recurrence.Interval, recurrence.DayOfMonth, recurrence.EvenOdd, recurrence.NextRunAt, recurrence.ID)
 	updatet, err := scanRecurrence(row)
 
 	if err != nil {
@@ -111,7 +111,7 @@ func (r *RecurrenceRepository) Update(ctx context.Context, recurrence *taskdomai
 	}
 
 	if recurrence.Dates != nil {
-		_, err := r.pool.Exec(ctx, `DELETE FROM recurrence_dates WHERE recurrence_id = $1`, updatet.ID)
+		_, err := getQuerier(ctx, r.pool).Exec(ctx, `DELETE FROM recurrence_dates WHERE recurrence_id = $1`, updatet.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -123,7 +123,7 @@ func (r *RecurrenceRepository) Update(ctx context.Context, recurrence *taskdomai
 		for _, date := range recurrence.Dates {
 			batch.Queue(queryDates, updatet.ID, date)
 		}
-		batchResult := r.pool.SendBatch(ctx, batch)
+		batchResult := getQuerier(ctx, r.pool).SendBatch(ctx, batch)
 		if err := batchResult.Close(); err != nil {
 			return nil, err
 		}
@@ -137,7 +137,7 @@ func (r *RecurrenceRepository) Delete(ctx context.Context, id int64) error {
 	const query = `
 		DELETE FROM recurrence WHERE id = $1
 		`
-	_, err := r.pool.Exec(ctx, query, id)
+	_, err := getQuerier(ctx, r.pool).Exec(ctx, query, id)
 	if err != nil {
 		return err
 	}
@@ -150,7 +150,7 @@ func (r *RecurrenceRepository) ListDue(ctx context.Context, now time.Time) ([]ta
 		FROM recurrence
 		WHERE next_run_at <= $1
 		`
-	rows, err := r.pool.Query(ctx, query, now)
+	rows, err := getQuerier(ctx, r.pool).Query(ctx, query, now)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +177,7 @@ func (r *RecurrenceRepository) ListByTaskIDs(ctx context.Context, taskIDs []int6
 		LEFT JOIN recurrence_dates rd ON rd.recurrence_id = r.id
 		WHERE task_id = ANY($1) 
 	`
-	rows, err := r.pool.Query(ctx, query, taskIDs)
+	rows, err := getQuerier(ctx, r.pool).Query(ctx, query, taskIDs)
 	if err != nil {
 		return nil, err
 	}

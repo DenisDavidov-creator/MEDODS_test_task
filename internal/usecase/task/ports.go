@@ -33,6 +33,10 @@ type Usecase interface {
 	ProcessDue(ctx context.Context) error
 }
 
+type TransactorInterface interface {
+	WithinTransaction(ctx context.Context, fn func(ctx context.Context) error) error
+}
+
 type CreateInput struct {
 	Title       string
 	Description string

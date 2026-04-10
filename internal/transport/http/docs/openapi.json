@@ -234,6 +234,10 @@
           "day_of_month": { "type": "integer", "nullable": true },
           "even_odd": { "type": "string", "enum": ["even", "odd"], "nullable": true },
           "specific_dates": { "type": "array", "items": { "type": "string", "format": "date-time" }, "nullable": true }
+        },
+        "example": {
+        "type": "interval",
+        "interval": 3
         }
       },
       "Error": {
